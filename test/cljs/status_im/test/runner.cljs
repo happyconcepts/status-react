@@ -6,6 +6,7 @@
             [status-im.test.wallet.events]
             [status-im.test.wallet.transactions.subs]
             [status-im.test.profile.events]
+            [status-im.test.bots.events]
             [status-im.test.chat.models.input]
             [status-im.test.components.main-tabs]
             [status-im.test.i18n]
@@ -32,6 +33,7 @@
  ;;'status-im.test.contacts.events
  'status-im.test.profile.events
  'status-im.test.wallet.events
+ 'status-im.test.bots.events
  'status-im.test.wallet.transactions.subs
  'status-im.test.chat.models.input
  'status-im.test.components.main-tabs

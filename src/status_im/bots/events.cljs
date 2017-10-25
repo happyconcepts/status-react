@@ -35,6 +35,9 @@
                                         :result jail-response}]])})})))
 
 (defn set-in-bot-db
+  "Associates value at specified path in bot-db and checks if there are any subscriptions
+  dependent on that path, if yes, adds effects for calling jail-functions to recalculate
+  relevant subscriptions."
   [{:keys [current-chat-id] :as app-db} {:keys [bot path value] :as params}]
   (let [bot    (or bot current-chat-id)
         new-db (assoc-in app-db (concat [:bot-db bot] path) value)]
@@ -52,25 +55,46 @@
 
 (def ^:private keywordize-vector (partial mapv keyword))
 
-;; TODO(janherich): do something with this horrible triple nested reduce so it's more readable
+(defn- map-values [m f]
+  (into {}
+        (map (fn [[k v]]
+               [k (f v)]))
+        m))
+
+(defn- transform-bot-subscriptions
+  "Transforms bot subscriptions as returned from jail in the following format:
+
+  `{:calculatedFee {:subscriptions {:value [\"sliderValue\"]
+                                    :tx [\"transaction\"]}}
+    :feeExplanation {:subscriptions {:value [\"sliderValue\"]}}}`
+
+  into data-structure better suited for subscription lookups based on changes
+  in `:bot-db`:
+
+  `{[:sliderValue] {:calculatedFee {:value [:sliderValue]
+                                    :tx [:transaction]}}
+    [:transaction] {:feeExplanation {:value [:sliderValue]}}}`
+
+  In the resulting data-structure, the top level keys are the (keywordized) paths
+  in the `:bot-db` data structure, so it's quick and easy to look-up all the
+  subscriptions which must be recalculated when something in their path changes."
+  [bot-subscriptions] 
+  (reduce-kv (fn [acc sub-key {:keys [subscriptions]}] 
+               (reduce-kv (fn [acc sub-param-key sub-param-path]
+                            (update acc (keywordize-vector sub-param-path)
+                                    assoc sub-key (map-values subscriptions keywordize-vector)))
+                          acc
+                          subscriptions))
+             {}
+             bot-subscriptions))
+
 (defn add-active-bot-subscriptions
+  "Add subscriptions for selected bot identities into app-db"
   [app-db bot-identities]
-  (let [relevant-bots (select-keys (:contacts/contacts app-db) bot-identities)
-        active-subscriptions (reduce (fn [acc [bot-id {:keys [subscriptions]}]]
-                                       (reduce (fn [acc [sub-key {:keys [subscriptions]}]]
-                                                 (reduce (fn [acc [sub-param-key sub-param-path]]
-                                                           (update-in acc [bot-id (keywordize-vector sub-param-path)]
-                                                                      assoc sub-key (into {}
-                                                                                          (map (fn [[k v]]
-                                                                                                 [k (keywordize-vector v)]))
-                                                                                          subscriptions)))
-                                                         acc
-                                                         subscriptions))
-                                               acc
-                                               subscriptions))
-                                     {}
-                                     relevant-bots)]
-    (assoc app-db :bot-subscriptions active-subscriptions)))
+  (assoc app-db :bot-subscriptions (-> app-db
+                                       :contacts/contacts
+                                       (select-keys bot-identities) 
+                                       (map-values (comp transform-bot-subscriptions :subscriptions)))))
 
 ;;;; Handlers
 
